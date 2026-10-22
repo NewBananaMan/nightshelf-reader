@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nightshelf-shell-v2';
+const CACHE_NAME = 'nightshelf-shell-v3';
 const APP_FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg', './apple-touch-icon.png'];
 const JSZIP_URL = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
 

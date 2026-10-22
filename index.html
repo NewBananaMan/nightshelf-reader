@@ -12,13 +12,13 @@
   <style>
     :root { color-scheme: dark; --bg:#0d0f14; --surface:#151922; --surface2:#1d2330; --line:#2a3140; --text:#eef1f7; --muted:#a6afbf; --accent:#b7d7ff; --accentText:#101722; --danger:#ffb5b5; }
     * { box-sizing:border-box; }
-    html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    html, body { margin:0; min-height:100%; width:100%; max-width:100%; overflow-x:hidden; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; -webkit-text-size-adjust:100%; }
     body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
-    button, select, input { font:inherit; }
+    button, select, input { font:inherit; touch-action:manipulation; }
     button, .file-button { border:1px solid var(--line); border-radius:13px; min-height:44px; padding:10px 14px; background:var(--surface2); color:var(--text); cursor:pointer; }
     button.primary, .file-button.primary { background:var(--accent); color:var(--accentText); border-color:transparent; font-weight:700; }
     button:disabled { opacity:.4; cursor:not-allowed; }
-    .app { max-width:900px; min-height:100dvh; margin:0 auto; display:flex; flex-direction:column; }
+    .app { width:100%; max-width:900px; min-width:0; min-height:100vh; min-height:100dvh; margin:0 auto; display:flex; flex-direction:column; }
     header { padding:18px 18px 14px; display:flex; gap:12px; align-items:center; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; background:rgba(13,15,20,.95); backdrop-filter:blur(14px); }
     .brand-icon { width:39px; height:39px; flex:0 0 39px; }
     .brand { flex:1; min-width:0; }
@@ -48,16 +48,22 @@
     #readerScreen { display:none; padding:0; }
     .reader-top { padding:12px 14px; position:sticky; top:0; z-index:4; background:rgba(13,15,20,.97); border-bottom:1px solid var(--line); }
     .reader-book-title { font-size:14px; font-weight:650; margin:0 0 10px; overflow-wrap:anywhere; }
-    .reader-controls { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
-    .reader-controls button { padding:8px 10px; min-height:38px; }
-    .reader-controls select { min-width:0; flex:1 1 150px; height:38px; border-radius:10px; border:1px solid var(--line); color:var(--text); background:var(--surface2); padding:0 8px; }
-    #reader { height:calc(100dvh - 190px); min-height:48vh; width:100%; overflow-y:auto; overflow-x:hidden; background:#0b0d12; -webkit-overflow-scrolling:touch; }
+    .reader-controls { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; width:100%; min-width:0; }
+    .reader-controls button { padding:8px 10px; min-height:40px; white-space:nowrap; }
+    .reader-controls select { display:block; min-width:0; width:100%; max-width:100%; height:40px; border-radius:10px; border:1px solid var(--line); color:var(--text); background:var(--surface2); padding:0 8px; grid-column:1; }
+    #fontDown { grid-column:2; }
+    #fontUp { grid-column:3; }
+    #themeToggle { grid-column:1 / -1; justify-self:start; }
+    #reader { height:calc(100vh - 245px); height:calc(100svh - 245px); min-height:300px; max-height:900px; width:100%; min-width:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; background:#0b0d12; -webkit-overflow-scrolling:touch; }
     #reader.reader-dark { background:#0b0d12; color:#e8ebf2; }
     #reader.reader-light { background:#fffdf8; color:#20232a; }
-    .chapter-content { max-width:780px; margin:0 auto; padding:22px 22px 36px; font-size:100%; line-height:1.8; overflow-wrap:anywhere; }
-    .chapter-content h1 { font-size:1.28em; line-height:1.45; margin:0 0 1.35em; font-weight:700; }
+    .chapter-content { width:100%; max-width:780px; min-width:0; margin:0 auto; padding:clamp(16px,4vw,26px) clamp(16px,4vw,26px) 36px; font-size:100%; line-height:1.8; overflow-wrap:anywhere; }
+    .chapter-content h1 { font-size:1.28em; line-height:1.45; margin:0 0 1.1em; font-weight:700; overflow-wrap:anywhere; }
+    .chapter-body-content { min-width:0; max-width:100%; overflow-wrap:anywhere; }
     .chapter-body-content p { margin:0 0 1em; }
-    .chapter-body-content img { max-width:100%; height:auto; }
+    .chapter-body-content img, .chapter-body-content svg, .chapter-body-content video { max-width:100% !important; height:auto; }
+    .chapter-body-content table { display:block; max-width:100%; overflow-x:auto; }
+    .chapter-body-content * { max-width:100%; }
     .reader-light .chapter-body-content a { color:#215fab; }
     .reader-dark .chapter-body-content a { color:#a9cfff; }
     .reader-bottom { display:flex; gap:8px; padding:10px 14px calc(12px + env(safe-area-inset-bottom)); align-items:center; background:var(--bg); border-top:1px solid var(--line); position:sticky; bottom:0; }
@@ -67,7 +73,8 @@
     .hidden { display:none !important; }
     footer { padding:10px 18px 20px; color:#80899a; font-size:11px; line-height:1.5; }
     .toast { position:fixed; bottom:calc(22px + env(safe-area-inset-bottom)); left:16px; right:16px; max-width:540px; margin:auto; z-index:20; background:#263142; border:1px solid #43516a; padding:12px 14px; border-radius:13px; box-shadow:0 8px 25px #0008; display:none; }
-    @media(min-width:650px) { main { padding:24px; } .book-list { grid-template-columns:1fr 1fr; } #reader { height:calc(100dvh - 184px); } }
+    @media(min-width:650px) { main { padding:24px; } .book-list { grid-template-columns:1fr 1fr; } #reader { height:calc(100vh - 220px); height:calc(100svh - 220px); } .reader-controls { display:flex; flex-wrap:wrap; } .reader-controls select { flex:1 1 240px; width:auto; } #fontDown, #fontUp, #themeToggle { grid-column:auto; } }
+    @media(max-width:420px) { .reader-top { padding:10px; } .reader-bottom { padding-left:10px; padding-right:10px; } .reader-bottom button { padding:9px 8px; } .chapter-content { padding-left:16px; padding-right:16px; } }
   </style>
 </head>
 <body>
@@ -162,7 +169,9 @@
         say(`Skipped ${file.name}: this is not an EPUB.`); continue;
       }
       try {
-        const record = { id: idFor(file), name: file.name, title: file.name.replace(/\.epub$/i, ''), creator: '', size: file.size, addedAt: Date.now(), blob: file, progressIndex: 0, fontSize: 100, theme: 'dark' };
+        const bytes = await file.arrayBuffer();
+        const epubBlob = new Blob([bytes], { type: 'application/epub+zip' });
+        const record = { id: idFor(file), name: file.name, title: file.name.replace(/\.epub$/i, ''), creator: '', size: file.size, addedAt: Date.now(), blob: epubBlob, progressIndex: 0, fontSize: 100, theme: 'dark' };
         await putBook(record); success++;
       } catch (err) { console.error(err); say(`Couldn't save ${file.name}. Browser storage may be full.`); }
     }
@@ -244,9 +253,14 @@
     });
   }
 
-  async function inspectEpub(blob) {
+  async function inspectEpub(source) {
     if (!window.JSZip) throw new Error('The EPUB helper library did not load. Connect to the internet and reload NightShelf.');
-    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    let bytes;
+    if (source instanceof ArrayBuffer) bytes = source;
+    else if (source && typeof source.arrayBuffer === 'function') bytes = await source.arrayBuffer();
+    else if (source instanceof Uint8Array) bytes = source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
+    else throw new Error('The saved EPUB data is unavailable. Please re-import the original EPUB from Files.');
+    const zip = await JSZip.loadAsync(bytes);
     const containerFile = zip.file('META-INF/container.xml');
     if (!containerFile) throw new Error('This file is missing META-INF/container.xml, which every EPUB needs.');
     const container = parseXml(await containerFile.async('string'), 'EPUB container');
@@ -285,20 +299,20 @@
     const packageMeta = firstDescendant(packageEl, 'metadata');
     const title = packageMeta ? textOf(packageMeta, 'title') : '';
     const creator = packageMeta ? textOf(packageMeta, 'creator') : '';
-    return { zip, chapters: list, title, creator };
+    return { zip, chapters: list, title, creator, bytes };
   }
 
   function clearImageUrls() {
     for (const url of imageUrls) URL.revokeObjectURL(url);
     imageUrls = [];
   }
-  async function sanitizeAndAttachImages(htmlDoc, chapterPath) {
+  async function sanitizeAndAttachImages(htmlDoc, chapterPath, zipForChapter) {
     const body = htmlDoc.body || htmlDoc.documentElement;
-    body.querySelectorAll('script, iframe, object, embed, form, input, button, link, meta, base').forEach(el => el.remove());
+    body.querySelectorAll('script, iframe, object, embed, form, input, button, link, meta, base, style').forEach(el => el.remove());
     body.querySelectorAll('*').forEach(el => {
       for (const attr of [...el.attributes]) {
         const name = attr.name.toLowerCase();
-        if (name.startsWith('on') || name === 'srcdoc') el.removeAttribute(attr.name);
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'style') el.removeAttribute(attr.name);
         if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
       }
       if (el.matches('a[href]')) {
@@ -310,7 +324,7 @@
     const images = [...body.querySelectorAll('img[src]')];
     await Promise.all(images.map(async img => {
       const path = resolveZipPath(chapterPath, img.getAttribute('src'));
-      const file = bookZip && bookZip.file(path);
+      const file = zipForChapter && zipForChapter.file(path);
       if (!file) { img.remove(); return; }
       try {
         const blob = await file.async('blob');
@@ -321,57 +335,95 @@
     return body.innerHTML;
   }
 
+  let renderGeneration = 0;
+  function setNavigationBusy(busy) {
+    $('prevButton').disabled = busy || chapterIndex === 0;
+    $('nextButton').disabled = busy || chapterIndex === chapters.length - 1;
+    $('tocSelect').disabled = busy || !chapters.length;
+    $('fontDown').disabled = busy;
+    $('fontUp').disabled = busy;
+  }
   async function renderChapter(index, restoreScroll = false) {
-    if (!chapters.length) return;
-    chapterIndex = Math.max(0, Math.min(chapters.length - 1, index));
-    const chapter = chapters[chapterIndex];
+    if (!chapters.length || !activeRecord || !bookZip) return;
+    const renderId = ++renderGeneration;
+    const selectedIndex = Math.max(0, Math.min(chapters.length - 1, index));
+    const selectedChapter = chapters[selectedIndex];
+    const record = activeRecord;
+    const zip = bookZip;
+    chapterIndex = selectedIndex;
     $('readerStatus').textContent = 'Loading chapter…';
+    setNavigationBusy(true);
     clearImageUrls();
-    const raw = new DOMParser().parseFromString(chapter.source, 'text/html');
-    const markup = await sanitizeAndAttachImages(raw, chapter.path);
-    const reader = $('reader'); reader.replaceChildren();
-    reader.className = currentTheme === 'light' ? 'reader-light' : 'reader-dark';
-    const content = document.createElement('article'); content.className = 'chapter-content';
-    content.style.fontSize = `${fontSize}%`;
-    const heading = document.createElement('h1'); heading.textContent = chapter.title;
-    content.append(heading);
-    const bodyContainer = document.createElement('div'); bodyContainer.className = 'chapter-body-content'; bodyContainer.innerHTML = markup;
-    // Remove a duplicate title from the extracted body to avoid displaying it twice.
-    const firstHeading = bodyContainer.querySelector('h1, h2');
-    if (firstHeading && firstHeading.textContent.trim() === chapter.title.trim()) firstHeading.remove();
-    content.append(bodyContainer); reader.append(content);
-    $('readerBookTitle').textContent = safeTitle(activeRecord);
-    $('tocSelect').value = String(chapterIndex);
-    $('progressText').textContent = `${chapterIndex + 1}/${chapters.length}`;
-    $('prevButton').disabled = chapterIndex === 0;
-    $('nextButton').disabled = chapterIndex === chapters.length - 1;
-    $('readerStatus').textContent = '';
-    reader.scrollTop = restoreScroll ? Number(activeRecord.scrollTop || 0) : 0;
-    activeRecord.progressIndex = chapterIndex;
-    activeRecord.progress = chapterIndex; // migrate away from the old EPUB.js CFI value
-    await putBook(activeRecord);
+    try {
+      const raw = new DOMParser().parseFromString(selectedChapter.source, 'text/html');
+      const markup = await sanitizeAndAttachImages(raw, selectedChapter.path, zip);
+      if (renderId !== renderGeneration || record !== activeRecord || zip !== bookZip) return;
+      const reader = $('reader'); reader.replaceChildren();
+      reader.className = currentTheme === 'light' ? 'reader-light' : 'reader-dark';
+      const content = document.createElement('article'); content.className = 'chapter-content';
+      content.style.fontSize = `${fontSize}%`;
+      const bodyContainer = document.createElement('div'); bodyContainer.className = 'chapter-body-content'; bodyContainer.innerHTML = markup;
+      const chapterHeadingPattern = /^\s*\d+\s*[:.]\s*chapter\s+\d+\b/i;
+      const headings = [...bodyContainer.querySelectorAll('h1, h2, h3')];
+      const firstChapterHeading = headings.find(h => chapterHeadingPattern.test(h.textContent.trim()));
+      if (firstChapterHeading) {
+        // WebToEpub exports sometimes include two alternate translated chapter titles.
+        for (const h of headings) {
+          if (h !== firstChapterHeading && chapterHeadingPattern.test(h.textContent.trim())) h.remove();
+        }
+      } else {
+        const heading = document.createElement('h1'); heading.textContent = selectedChapter.title; content.append(heading);
+      }
+      content.append(bodyContainer); reader.append(content);
+      $('readerBookTitle').textContent = safeTitle(record);
+      $('tocSelect').value = String(selectedIndex);
+      $('progressText').textContent = `${selectedIndex + 1}/${chapters.length}`;
+      $('readerStatus').textContent = '';
+      reader.scrollTop = restoreScroll ? Number(record.scrollTop || 0) : 0;
+      record.progressIndex = selectedIndex;
+      record.progress = selectedIndex;
+      await putBook(record);
+    } catch (err) {
+      if (renderId === renderGeneration) {
+        console.error('NightShelf chapter render failed:', err);
+        $('readerStatus').textContent = `Could not display this chapter: ${err && err.message ? err.message : 'unexpected error'}`;
+      }
+    } finally {
+      if (renderId === renderGeneration) setNavigationBusy(false);
+    }
   }
 
   async function openBook(id) {
-    activeRecord = await getBook(id); if (!activeRecord) return;
+    const openId = ++renderGeneration;
+    const record = await getBook(id);
+    if (!record || openId !== renderGeneration) return;
+    activeRecord = record;
     $('libraryScreen').style.display = 'none'; $('readerScreen').style.display = 'block'; $('libraryButton').classList.remove('hidden');
     $('readerBookTitle').textContent = safeTitle(activeRecord); $('readerStatus').textContent = 'Opening EPUB…'; $('reader').replaceChildren();
+    $('tocSelect').disabled = true; $('prevButton').disabled = true; $('nextButton').disabled = true;
     fontSize = Number(activeRecord.fontSize || 100); currentTheme = activeRecord.theme || 'dark'; updateThemeButton();
     try {
       const parsed = await inspectEpub(activeRecord.blob);
+      if (openId !== renderGeneration || activeRecord !== record) return;
       bookZip = parsed.zip; chapters = parsed.chapters;
+      // Migrate legacy File values to plain ArrayBuffer bytes. On some iOS browsers,
+      // a File stored in IndexedDB can lose its backing object after a reload.
+      activeRecord.blob = new Blob([parsed.bytes], { type: 'application/epub+zip' });
       if (parsed.title) activeRecord.title = parsed.title;
       if (parsed.creator && parsed.creator !== '<unknown>') activeRecord.creator = parsed.creator;
       $('readerBookTitle').textContent = safeTitle(activeRecord);
       const select = $('tocSelect'); select.replaceChildren();
-      chapters.forEach((chapter, i) => select.append(new Option(chapter.title, String(i))));
+      chapters.forEach((chapter, i) => select.append(new Option(`${i + 1}: ${chapter.title.replace(/^\s*\d+\s*[:.]\s*/,'')}`, String(i))));
       select.disabled = false;
-      const prior = Number.isInteger(activeRecord.progressIndex) ? activeRecord.progressIndex : (Number.isInteger(activeRecord.progress) ? activeRecord.progress : 0);
+      const priorRaw = Number.isInteger(activeRecord.progressIndex) ? activeRecord.progressIndex : (Number.isInteger(activeRecord.progress) ? activeRecord.progress : 0);
+      const prior = Math.max(0, Math.min(chapters.length - 1, priorRaw));
       await putBook(activeRecord);
+      if (openId !== renderGeneration) return;
       await renderChapter(prior, true);
     } catch (err) {
+      if (openId !== renderGeneration) return;
       console.error('NightShelf could not open EPUB:', err);
-      $('readerStatus').textContent = `Could not open this EPUB: ${err && err.message ? err.message : 'unexpected error'} Try refreshing the page. Your original EPUB remains in Files.`;
+      $('readerStatus').textContent = `Could not open this EPUB: ${err && err.message ? err.message : 'unexpected error'} Try re-importing the original EPUB from Files. Your original file remains in Files.`;
     }
   }
 
@@ -382,6 +434,7 @@
     $('reader').className = currentTheme === 'light' ? 'reader-light' : 'reader-dark';
   }
   function showLibrary() {
+    renderGeneration++;
     clearImageUrls(); bookZip = null; chapters = []; activeRecord = null;
     $('readerScreen').style.display = 'none'; $('libraryScreen').style.display = 'block'; $('libraryButton').classList.add('hidden'); renderLibrary();
   }
@@ -392,8 +445,8 @@
   $('prevButton').addEventListener('click', () => { if (chapterIndex > 0) renderChapter(chapterIndex - 1); });
   $('nextButton').addEventListener('click', () => { if (chapterIndex < chapters.length - 1) renderChapter(chapterIndex + 1); });
   $('tocSelect').addEventListener('change', () => { const n = Number($('tocSelect').value); if (Number.isInteger(n)) renderChapter(n); });
-  $('fontDown').addEventListener('click', async () => { fontSize = Math.max(70, fontSize - 10); await saveAppearance(); });
-  $('fontUp').addEventListener('click', async () => { fontSize = Math.min(190, fontSize + 10); await saveAppearance(); });
+  $('fontDown').addEventListener('click', async () => { fontSize = Math.max(80, fontSize - 5); await saveAppearance(); });
+  $('fontUp').addEventListener('click', async () => { fontSize = Math.min(160, fontSize + 5); await saveAppearance(); });
   $('themeToggle').addEventListener('click', async () => { currentTheme = currentTheme === 'dark' ? 'light' : 'dark'; updateThemeButton(); await saveAppearance(); });
   $('reader').addEventListener('scroll', () => {
     if (!activeRecord) return;
@@ -410,7 +463,7 @@
   (async () => {
     try { db = await openDb(); await renderLibrary(); }
     catch (err) { console.error(err); say('Browser storage is unavailable. Try opening this site directly in Safari.'); }
-    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js?v=2').catch(err => console.warn('Service worker registration failed:', err));
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js?v=3').catch(err => console.warn('Service worker registration failed:', err));
   })();
 })();
 </script>
