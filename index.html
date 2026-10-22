@@ -51,8 +51,15 @@
     .reader-controls { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
     .reader-controls button { padding:8px 10px; min-height:38px; }
     .reader-controls select { min-width:0; flex:1 1 150px; height:38px; border-radius:10px; border:1px solid var(--line); color:var(--text); background:var(--surface2); padding:0 8px; }
-    #reader { height:calc(100dvh - 190px); min-height:48vh; width:100%; overflow:hidden; background:#0b0d12; }
-    #reader iframe { border:0; }
+    #reader { height:calc(100dvh - 190px); min-height:48vh; width:100%; overflow-y:auto; overflow-x:hidden; background:#0b0d12; -webkit-overflow-scrolling:touch; }
+    #reader.reader-dark { background:#0b0d12; color:#e8ebf2; }
+    #reader.reader-light { background:#fffdf8; color:#20232a; }
+    .chapter-content { max-width:780px; margin:0 auto; padding:22px 22px 36px; font-size:100%; line-height:1.8; overflow-wrap:anywhere; }
+    .chapter-content h1 { font-size:1.28em; line-height:1.45; margin:0 0 1.35em; font-weight:700; }
+    .chapter-body-content p { margin:0 0 1em; }
+    .chapter-body-content img { max-width:100%; height:auto; }
+    .reader-light .chapter-body-content a { color:#215fab; }
+    .reader-dark .chapter-body-content a { color:#a9cfff; }
     .reader-bottom { display:flex; gap:8px; padding:10px 14px calc(12px + env(safe-area-inset-bottom)); align-items:center; background:var(--bg); border-top:1px solid var(--line); position:sticky; bottom:0; }
     .reader-bottom button { flex:1; }
     #progressText { min-width:65px; text-align:center; color:var(--muted); font-size:12px; }
@@ -108,15 +115,15 @@
   <footer>NightShelf is a reader, not a book-hosting service. Import your own EPUB files. On iPhone, open the site in Safari and use Share → Add to Home Screen to make it feel like an app.</footer>
 </div>
 <div id="toast" class="toast" role="status"></div>
-<script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
   const DB_NAME = 'nightshelf-library-v1';
   const STORE = 'books';
-  const EPUBJS_URL = 'https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js';
-  let db, activeRecord = null, book = null, rendition = null, fontSize = 100, currentTheme = 'dark', toastTimer;
+  let db, activeRecord = null, bookZip = null, chapters = [], chapterIndex = 0;
+  let fontSize = 100, currentTheme = 'dark', toastTimer, saveTimer = null, imageUrls = [];
 
   function say(message, target = 'importStatus') { $(target).textContent = message || ''; }
   function toast(message) {
@@ -155,7 +162,7 @@
         say(`Skipped ${file.name}: this is not an EPUB.`); continue;
       }
       try {
-        const record = { id: idFor(file), name: file.name, title: file.name.replace(/\.epub$/i, ''), creator: '', size: file.size, addedAt: Date.now(), blob: file, progress: null, fontSize: 100, theme: 'dark' };
+        const record = { id: idFor(file), name: file.name, title: file.name.replace(/\.epub$/i, ''), creator: '', size: file.size, addedAt: Date.now(), blob: file, progressIndex: 0, fontSize: 100, theme: 'dark' };
         await putBook(record); success++;
       } catch (err) { console.error(err); say(`Couldn't save ${file.name}. Browser storage may be full.`); }
     }
@@ -176,7 +183,7 @@
       const cover = document.createElement('div'); cover.className = 'book-cover'; cover.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v18H7.5A2.5 2.5 0 0 1 5 17.5z"/><path d="M5 5v15M9 6h7M9 10h7"/></svg>';
       const info = document.createElement('div'); info.className = 'book-info';
       const title = document.createElement('div'); title.className = 'book-title'; title.textContent = safeTitle(record);
-      const meta = document.createElement('div'); meta.className = 'book-meta'; meta.textContent = `${record.creator ? record.creator + ' · ' : ''}${humanSize(record.size)}${record.progress ? ' · Reading progress saved' : ''}`;
+      const meta = document.createElement('div'); meta.className = 'book-meta'; meta.textContent = `${record.creator ? record.creator + ' · ' : ''}${humanSize(record.size)}${record.progressIndex ? ' · Reading progress saved' : ''}`;
       info.append(title, meta);
       const actions = document.createElement('div'); actions.className = 'book-actions';
       const open = document.createElement('button'); open.className = 'primary'; open.textContent = 'Read'; open.addEventListener('click', () => openBook(record.id));
@@ -185,93 +192,225 @@
     }
   }
 
-  function flattenToc(items, out = [], depth = 0) {
-    for (const item of (items || [])) {
-      if (item.href) out.push({ label: `${'　'.repeat(Math.min(depth, 4))}${String(item.label || 'Untitled section').trim()}`, href: item.href });
-      if (item.subitems?.length) flattenToc(item.subitems, out, depth + 1);
+  function descendants(node, localName) {
+    return Array.from(node.getElementsByTagNameNS('*', localName));
+  }
+  function firstDescendant(node, localName) { return descendants(node, localName)[0] || null; }
+  function textOf(node, localName) { const el = firstDescendant(node, localName); return el ? el.textContent.trim() : ''; }
+  function cleanPath(path) {
+    const out = [];
+    for (const part of String(path || '').replace(/\\/g, '/').split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..') out.pop(); else out.push(part);
     }
-    return out;
+    return out.join('/');
+  }
+  function resolveZipPath(baseFile, href) {
+    const raw = String(href || '').split('#')[0].split('?')[0];
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch (_) {}
+    const base = String(baseFile || '').includes('/') ? String(baseFile).slice(0, String(baseFile).lastIndexOf('/') + 1) : '';
+    return cleanPath((decoded.startsWith('/') ? '' : base) + decoded.replace(/^\//, ''));
+  }
+  function parseXml(source, label) {
+    const doc = new DOMParser().parseFromString(source, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error(`${label} XML is invalid.`);
+    return doc;
+  }
+  function makeMime(path) {
+    const ext = (path.split('.').pop() || '').toLowerCase();
+    return ({ jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', webp:'image/webp', svg:'image/svg+xml', avif:'image/avif', woff:'font/woff', woff2:'font/woff2', ttf:'font/ttf', otf:'font/otf' })[ext] || 'application/octet-stream';
+  }
+  function tocLabelsFromNcx(zip, opfPath, manifest, spine) {
+    const toc = spine.getAttribute('toc');
+    let ncxItem = toc ? manifest.find(item => item.id === toc) : null;
+    if (!ncxItem) ncxItem = manifest.find(item => item.mediaType === 'application/x-dtbncx+xml');
+    if (!ncxItem) return Promise.resolve(new Map());
+    const ncxPath = resolveZipPath(opfPath, ncxItem.href);
+    const file = zip.file(ncxPath);
+    if (!file) return Promise.resolve(new Map());
+    return file.async('string').then(source => {
+      const doc = parseXml(source, 'EPUB table of contents');
+      const labels = new Map();
+      for (const point of descendants(doc, 'navPoint')) {
+        const content = firstDescendant(point, 'content');
+        const label = textOf(point, 'text');
+        if (content && content.getAttribute('src')) {
+          const path = resolveZipPath(ncxPath, content.getAttribute('src'));
+          if (label) labels.set(path, label);
+        }
+      }
+      return labels;
+    });
+  }
+
+  async function inspectEpub(blob) {
+    if (!window.JSZip) throw new Error('The EPUB helper library did not load. Connect to the internet and reload NightShelf.');
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const containerFile = zip.file('META-INF/container.xml');
+    if (!containerFile) throw new Error('This file is missing META-INF/container.xml, which every EPUB needs.');
+    const container = parseXml(await containerFile.async('string'), 'EPUB container');
+    const rootfile = firstDescendant(container, 'rootfile');
+    const opfPath = rootfile && rootfile.getAttribute('full-path');
+    if (!opfPath || !zip.file(opfPath)) throw new Error('The EPUB package file could not be found.');
+    const opf = parseXml(await zip.file(opfPath).async('string'), 'EPUB package');
+    const packageEl = opf.documentElement;
+    const manifestEl = firstDescendant(packageEl, 'manifest');
+    const spine = firstDescendant(packageEl, 'spine');
+    if (!manifestEl || !spine) throw new Error('The EPUB package has no manifest or reading order.');
+    const manifest = descendants(manifestEl, 'item').map(item => ({
+      id: item.getAttribute('id'), href: item.getAttribute('href'), mediaType: item.getAttribute('media-type'), properties: item.getAttribute('properties') || ''
+    }));
+    const byId = new Map(manifest.map(item => [item.id, item]));
+    const labels = await tocLabelsFromNcx(zip, opfPath, manifest, spine);
+    const spineItems = descendants(spine, 'itemref');
+    const list = [];
+    for (const ref of spineItems) {
+      const item = byId.get(ref.getAttribute('idref'));
+      if (!item || item.mediaType !== 'application/xhtml+xml') continue;
+      const path = resolveZipPath(opfPath, item.href);
+      if (/\/Cover\.xhtml$/i.test('/' + path) || item.id === 'cover') continue;
+      const file = zip.file(path);
+      if (!file) continue;
+      const source = await file.async('string');
+      const doc = new DOMParser().parseFromString(source, 'text/html');
+      const heading = doc.querySelector('h1, h2, h3');
+      const title = labels.get(path) || (heading && heading.textContent.trim()) || doc.title || `Section ${list.length + 1}`;
+      const bodyText = (doc.body && doc.body.textContent || '').trim();
+      if (!bodyText) continue;
+      if (/^information$/i.test(title.trim()) || /Information\.xhtml$/i.test(path)) continue;
+      list.push({ path, title, source });
+    }
+    if (!list.length) throw new Error('The EPUB opened, but no readable XHTML chapters were found.');
+    const packageMeta = firstDescendant(packageEl, 'metadata');
+    const title = packageMeta ? textOf(packageMeta, 'title') : '';
+    const creator = packageMeta ? textOf(packageMeta, 'creator') : '';
+    return { zip, chapters: list, title, creator };
+  }
+
+  function clearImageUrls() {
+    for (const url of imageUrls) URL.revokeObjectURL(url);
+    imageUrls = [];
+  }
+  async function sanitizeAndAttachImages(htmlDoc, chapterPath) {
+    const body = htmlDoc.body || htmlDoc.documentElement;
+    body.querySelectorAll('script, iframe, object, embed, form, input, button, link, meta, base').forEach(el => el.remove());
+    body.querySelectorAll('*').forEach(el => {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on') || name === 'srcdoc') el.removeAttribute(attr.name);
+        if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
+      }
+      if (el.matches('a[href]')) {
+        const href = el.getAttribute('href') || '';
+        if (/^https?:\/\//i.test(href)) { el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener noreferrer'); }
+        else if (!href.startsWith('#')) el.removeAttribute('href');
+      }
+    });
+    const images = [...body.querySelectorAll('img[src]')];
+    await Promise.all(images.map(async img => {
+      const path = resolveZipPath(chapterPath, img.getAttribute('src'));
+      const file = bookZip && bookZip.file(path);
+      if (!file) { img.remove(); return; }
+      try {
+        const blob = await file.async('blob');
+        const url = URL.createObjectURL(new Blob([blob], { type: makeMime(path) }));
+        imageUrls.push(url); img.src = url; img.removeAttribute('srcset'); img.style.maxWidth = '100%'; img.style.height = 'auto';
+      } catch (_) { img.remove(); }
+    }));
+    return body.innerHTML;
+  }
+
+  async function renderChapter(index, restoreScroll = false) {
+    if (!chapters.length) return;
+    chapterIndex = Math.max(0, Math.min(chapters.length - 1, index));
+    const chapter = chapters[chapterIndex];
+    $('readerStatus').textContent = 'Loading chapter…';
+    clearImageUrls();
+    const raw = new DOMParser().parseFromString(chapter.source, 'text/html');
+    const markup = await sanitizeAndAttachImages(raw, chapter.path);
+    const reader = $('reader'); reader.replaceChildren();
+    reader.className = currentTheme === 'light' ? 'reader-light' : 'reader-dark';
+    const content = document.createElement('article'); content.className = 'chapter-content';
+    content.style.fontSize = `${fontSize}%`;
+    const heading = document.createElement('h1'); heading.textContent = chapter.title;
+    content.append(heading);
+    const bodyContainer = document.createElement('div'); bodyContainer.className = 'chapter-body-content'; bodyContainer.innerHTML = markup;
+    // Remove a duplicate title from the extracted body to avoid displaying it twice.
+    const firstHeading = bodyContainer.querySelector('h1, h2');
+    if (firstHeading && firstHeading.textContent.trim() === chapter.title.trim()) firstHeading.remove();
+    content.append(bodyContainer); reader.append(content);
+    $('readerBookTitle').textContent = safeTitle(activeRecord);
+    $('tocSelect').value = String(chapterIndex);
+    $('progressText').textContent = `${chapterIndex + 1}/${chapters.length}`;
+    $('prevButton').disabled = chapterIndex === 0;
+    $('nextButton').disabled = chapterIndex === chapters.length - 1;
+    $('readerStatus').textContent = '';
+    reader.scrollTop = restoreScroll ? Number(activeRecord.scrollTop || 0) : 0;
+    activeRecord.progressIndex = chapterIndex;
+    activeRecord.progress = chapterIndex; // migrate away from the old EPUB.js CFI value
+    await putBook(activeRecord);
   }
 
   async function openBook(id) {
-    if (typeof window.ePub !== 'function') { toast('The reader engine did not load. Connect to the internet and reload this page.'); return; }
-    if (rendition) { try { rendition.destroy(); } catch (_) {} rendition = null; }
-    if (book) { try { book.destroy(); } catch (_) {} book = null; }
     activeRecord = await getBook(id); if (!activeRecord) return;
     $('libraryScreen').style.display = 'none'; $('readerScreen').style.display = 'block'; $('libraryButton').classList.remove('hidden');
     $('readerBookTitle').textContent = safeTitle(activeRecord); $('readerStatus').textContent = 'Opening EPUB…'; $('reader').replaceChildren();
     fontSize = Number(activeRecord.fontSize || 100); currentTheme = activeRecord.theme || 'dark'; updateThemeButton();
     try {
-      const buffer = await activeRecord.blob.arrayBuffer();
-      book = ePub(buffer);
-      rendition = book.renderTo('reader', { width: '100%', height: '100%', flow: 'scrolled-doc', spread: 'none', allowScriptedContent: false });
-      registerThemes();
-      await book.ready;
-      const metadata = await book.loaded.metadata;
-      activeRecord.title = metadata.title || activeRecord.title; activeRecord.creator = metadata.creator || '';
+      const parsed = await inspectEpub(activeRecord.blob);
+      bookZip = parsed.zip; chapters = parsed.chapters;
+      if (parsed.title) activeRecord.title = parsed.title;
+      if (parsed.creator && parsed.creator !== '<unknown>') activeRecord.creator = parsed.creator;
       $('readerBookTitle').textContent = safeTitle(activeRecord);
-      const nav = await book.loaded.navigation;
-      const toc = flattenToc(nav.toc || []);
-      populateToc(toc);
-      rendition.themes.select(currentTheme); rendition.themes.fontSize(`${fontSize}%`);
-      rendition.on('relocated', loc => {
-        if (!loc || !loc.start) return;
-        activeRecord.progress = loc.start.cfi;
-        const href = loc.start.href || '';
-        const idx = toc.findIndex(item => href && (href === item.href || href.split('#')[0] === item.href.split('#')[0]));
-        $('progressText').textContent = idx >= 0 && toc.length ? `${idx + 1}/${toc.length}` : 'Reading';
-        const sel = $('tocSelect'); if (idx >= 0 && sel.options.length > idx) sel.selectedIndex = idx;
-        putBook(activeRecord).catch(console.error);
-      });
-      await rendition.display(activeRecord.progress || undefined);
-      $('readerStatus').textContent = '';
+      const select = $('tocSelect'); select.replaceChildren();
+      chapters.forEach((chapter, i) => select.append(new Option(chapter.title, String(i))));
+      select.disabled = false;
+      const prior = Number.isInteger(activeRecord.progressIndex) ? activeRecord.progressIndex : (Number.isInteger(activeRecord.progress) ? activeRecord.progress : 0);
       await putBook(activeRecord);
+      await renderChapter(prior, true);
     } catch (err) {
-      console.error(err); $('readerStatus').textContent = 'Could not open this EPUB. It may be incomplete or unsupported. Try importing the original EPUB again.';
+      console.error('NightShelf could not open EPUB:', err);
+      $('readerStatus').textContent = `Could not open this EPUB: ${err && err.message ? err.message : 'unexpected error'} Try refreshing the page. Your original EPUB remains in Files.`;
     }
   }
 
-  function populateToc(toc) {
-    const select = $('tocSelect'); select.replaceChildren();
-    if (!toc.length) { select.append(new Option('Contents unavailable', '')); select.disabled = true; return; }
-    select.disabled = false;
-    toc.forEach((item, i) => select.append(new Option(item.label || `Section ${i + 1}`, item.href)));
-    select.onchange = () => { if (rendition && select.value) rendition.display(select.value); };
-  }
-  function registerThemes() {
-    const dark = {
-      'body': { 'background': '#0b0d12 !important', 'color': '#e8ebf2 !important' },
-      'p, div, span, li, blockquote, section, article, h1, h2, h3, h4, h5, h6': { 'color': '#e8ebf2 !important', 'background-color': 'transparent !important' },
-      'a': { 'color': '#a9cfff !important' }
-    };
-    const light = {
-      'body': { 'background': '#fffdf8 !important', 'color': '#20232a !important' },
-      'p, div, span, li, blockquote, section, article, h1, h2, h3, h4, h5, h6': { 'color': '#20232a !important', 'background-color': 'transparent !important' },
-      'a': { 'color': '#215fab !important' }
-    };
-    rendition.themes.register('dark', dark); rendition.themes.register('light', light);
-  }
   function updateThemeButton() { $('themeToggle').textContent = currentTheme === 'dark' ? 'Light mode' : 'Dark mode'; }
-  async function saveAppearance() { if (activeRecord) { activeRecord.fontSize = fontSize; activeRecord.theme = currentTheme; await putBook(activeRecord); } }
+  async function saveAppearance() {
+    if (activeRecord) { activeRecord.fontSize = fontSize; activeRecord.theme = currentTheme; await putBook(activeRecord); }
+    const content = $('reader').querySelector('.chapter-content'); if (content) content.style.fontSize = `${fontSize}%`;
+    $('reader').className = currentTheme === 'light' ? 'reader-light' : 'reader-dark';
+  }
   function showLibrary() {
-    if (rendition) { try { rendition.destroy(); } catch (_) {} rendition = null; }
-    if (book) { try { book.destroy(); } catch (_) {} book = null; }
-    activeRecord = null; $('readerScreen').style.display = 'none'; $('libraryScreen').style.display = 'block'; $('libraryButton').classList.add('hidden'); renderLibrary();
+    clearImageUrls(); bookZip = null; chapters = []; activeRecord = null;
+    $('readerScreen').style.display = 'none'; $('libraryScreen').style.display = 'block'; $('libraryButton').classList.add('hidden'); renderLibrary();
   }
 
   $('epubPicker').addEventListener('change', e => importFiles([...e.target.files]));
   $('refreshButton').addEventListener('click', renderLibrary);
   $('libraryButton').addEventListener('click', showLibrary);
-  $('prevButton').addEventListener('click', () => rendition?.prev());
-  $('nextButton').addEventListener('click', () => rendition?.next());
-  $('fontDown').addEventListener('click', async () => { fontSize = Math.max(70, fontSize - 10); rendition?.themes.fontSize(`${fontSize}%`); await saveAppearance(); });
-  $('fontUp').addEventListener('click', async () => { fontSize = Math.min(190, fontSize + 10); rendition?.themes.fontSize(`${fontSize}%`); await saveAppearance(); });
-  $('themeToggle').addEventListener('click', async () => { currentTheme = currentTheme === 'dark' ? 'light' : 'dark'; rendition?.themes.select(currentTheme); updateThemeButton(); await saveAppearance(); });
+  $('prevButton').addEventListener('click', () => { if (chapterIndex > 0) renderChapter(chapterIndex - 1); });
+  $('nextButton').addEventListener('click', () => { if (chapterIndex < chapters.length - 1) renderChapter(chapterIndex + 1); });
+  $('tocSelect').addEventListener('change', () => { const n = Number($('tocSelect').value); if (Number.isInteger(n)) renderChapter(n); });
+  $('fontDown').addEventListener('click', async () => { fontSize = Math.max(70, fontSize - 10); await saveAppearance(); });
+  $('fontUp').addEventListener('click', async () => { fontSize = Math.min(190, fontSize + 10); await saveAppearance(); });
+  $('themeToggle').addEventListener('click', async () => { currentTheme = currentTheme === 'dark' ? 'light' : 'dark'; updateThemeButton(); await saveAppearance(); });
+  $('reader').addEventListener('scroll', () => {
+    if (!activeRecord) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!activeRecord) return;
+      activeRecord.scrollTop = $('reader').scrollTop;
+      activeRecord.progressIndex = chapterIndex;
+      activeRecord.progress = chapterIndex;
+      putBook(activeRecord).catch(console.error);
+    }, 350);
+  }, { passive: true });
 
   (async () => {
     try { db = await openDb(); await renderLibrary(); }
     catch (err) { console.error(err); say('Browser storage is unavailable. Try opening this site directly in Safari.'); }
-    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(err => console.warn('Service worker registration failed:', err));
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js?v=2').catch(err => console.warn('Service worker registration failed:', err));
   })();
 })();
 </script>
