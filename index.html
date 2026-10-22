@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <meta name="description" content="A private, dark-mode EPUB reader. Books stay in your browser on this device.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <title>NightShelf — EPUB Reader</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d0f14; --surface:#151922; --surface2:#1d2330; --line:#2a3140; --text:#eef1f7; --muted:#a6afbf; --accent:#b7d7ff; --accentText:#101722; --danger:#ffb5b5; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+    button, select, input { font:inherit; }
+    button, .file-button { border:1px solid var(--line); border-radius:13px; min-height:44px; padding:10px 14px; background:var(--surface2); color:var(--text); cursor:pointer; }
+    button.primary, .file-button.primary { background:var(--accent); color:var(--accentText); border-color:transparent; font-weight:700; }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+    .app { max-width:900px; min-height:100dvh; margin:0 auto; display:flex; flex-direction:column; }
+    header { padding:18px 18px 14px; display:flex; gap:12px; align-items:center; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; background:rgba(13,15,20,.95); backdrop-filter:blur(14px); }
+    .brand-icon { width:39px; height:39px; flex:0 0 39px; }
+    .brand { flex:1; min-width:0; }
+    .brand h1 { margin:0; font-size:19px; letter-spacing:-.03em; }
+    .brand p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+    main { flex:1; padding:18px; }
+    .panel { background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:16px; margin-bottom:16px; }
+    h2 { font-size:18px; margin:0 0 8px; letter-spacing:-.02em; }
+    p { line-height:1.5; }
+    .muted { color:var(--muted); }
+    .small { font-size:12px; }
+    .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }
+    .toolbar .grow { flex:1; }
+    input[type=file] { display:none; }
+    .file-button { display:inline-flex; justify-content:center; align-items:center; }
+    .notice { border-left:3px solid var(--accent); padding:10px 12px; margin-top:14px; color:var(--muted); font-size:13px; line-height:1.45; background:#171d27; border-radius:0 10px 10px 0; }
+    .book-list { display:grid; grid-template-columns:1fr; gap:10px; }
+    .book-card { display:flex; gap:12px; align-items:center; background:var(--surface); border:1px solid var(--line); border-radius:15px; padding:12px; }
+    .book-cover { width:48px; height:62px; flex:0 0 48px; display:grid; place-items:center; border-radius:8px; background:linear-gradient(145deg,#26374f,#17202f); color:#d8e7ff; }
+    .book-cover svg { width:26px; }
+    .book-info { flex:1; min-width:0; }
+    .book-title { font-weight:650; overflow-wrap:anywhere; line-height:1.3; }
+    .book-meta { margin-top:5px; color:var(--muted); font-size:12px; line-height:1.4; }
+    .book-actions { display:flex; flex-direction:column; gap:6px; }
+    .book-actions button { min-height:36px; padding:7px 10px; font-size:13px; }
+    .empty { text-align:center; padding:28px 14px; color:var(--muted); border:1px dashed #3a4354; border-radius:15px; }
+    #readerScreen { display:none; padding:0; }
+    .reader-top { padding:12px 14px; position:sticky; top:0; z-index:4; background:rgba(13,15,20,.97); border-bottom:1px solid var(--line); }
+    .reader-book-title { font-size:14px; font-weight:650; margin:0 0 10px; overflow-wrap:anywhere; }
+    .reader-controls { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+    .reader-controls button { padding:8px 10px; min-height:38px; }
+    .reader-controls select { min-width:0; flex:1 1 150px; height:38px; border-radius:10px; border:1px solid var(--line); color:var(--text); background:var(--surface2); padding:0 8px; }
+    #reader { height:calc(100dvh - 190px); min-height:48vh; width:100%; overflow:hidden; background:#0b0d12; }
+    #reader iframe { border:0; }
+    .reader-bottom { display:flex; gap:8px; padding:10px 14px calc(12px + env(safe-area-inset-bottom)); align-items:center; background:var(--bg); border-top:1px solid var(--line); position:sticky; bottom:0; }
+    .reader-bottom button { flex:1; }
+    #progressText { min-width:65px; text-align:center; color:var(--muted); font-size:12px; }
+    .status { margin-top:10px; color:var(--muted); font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .hidden { display:none !important; }
+    footer { padding:10px 18px 20px; color:#80899a; font-size:11px; line-height:1.5; }
+    .toast { position:fixed; bottom:calc(22px + env(safe-area-inset-bottom)); left:16px; right:16px; max-width:540px; margin:auto; z-index:20; background:#263142; border:1px solid #43516a; padding:12px 14px; border-radius:13px; box-shadow:0 8px 25px #0008; display:none; }
+    @media(min-width:650px) { main { padding:24px; } .book-list { grid-template-columns:1fr 1fr; } #reader { height:calc(100dvh - 184px); } }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <img class="brand-icon" src="./icon.svg" alt="" width="39" height="39">
+    <div class="brand"><h1>NightShelf</h1><p>Private, dark-mode EPUB reader</p></div>
+    <button id="libraryButton" class="hidden" type="button">Library</button>
+  </header>
+  <main id="libraryScreen">
+    <section class="panel">
+      <h2>Your reading library</h2>
+      <p class="muted">Import EPUB books from Files. NightShelf stores your books and reading position in this browser on this device; the book contents are not uploaded to this site.</p>
+      <div class="toolbar">
+        <label class="file-button primary" for="epubPicker">＋ Add EPUB books</label>
+        <input id="epubPicker" type="file" accept=".epub,application/epub+zip" multiple>
+        <button id="refreshButton" type="button">Refresh library</button>
+      </div>
+      <div id="importStatus" class="status" role="status"></div>
+      <div class="notice">Keep a copy of each original EPUB in Files. Browser storage can be cleared by device or browser cleanup, and the library may not transfer automatically to another device.</div>
+    </section>
+    <section>
+      <div class="toolbar" style="margin-bottom:12px"><h2 style="margin:0;flex:1">Books on this device</h2><span id="bookCount" class="muted small">0 books</span></div>
+      <div id="bookList" class="book-list"><div class="empty">Your library is empty. Add an EPUB to start reading.</div></div>
+    </section>
+  </main>
+  <main id="readerScreen">
+    <div class="reader-top">
+      <p id="readerBookTitle" class="reader-book-title">Loading book…</p>
+      <div class="reader-controls">
+        <select id="tocSelect" aria-label="Jump to chapter"><option>Loading contents…</option></select>
+        <button id="fontDown" type="button" aria-label="Decrease text size">A−</button>
+        <button id="fontUp" type="button" aria-label="Increase text size">A＋</button>
+        <button id="themeToggle" type="button">Light mode</button>
+      </div>
+      <div id="readerStatus" class="status" role="status"></div>
+    </div>
+    <div id="reader" aria-label="Book text"></div>
+    <div class="reader-bottom">
+      <button id="prevButton" type="button">← Previous</button>
+      <span id="progressText">—</span>
+      <button id="nextButton" type="button">Next →</button>
+    </div>
+  </main>
+  <footer>NightShelf is a reader, not a book-hosting service. Import your own EPUB files. On iPhone, open the site in Safari and use Share → Add to Home Screen to make it feel like an app.</footer>
+</div>
+<div id="toast" class="toast" role="status"></div>
+<script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const DB_NAME = 'nightshelf-library-v1';
+  const STORE = 'books';
+  const EPUBJS_URL = 'https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js';
+  let db, activeRecord = null, book = null, rendition = null, fontSize = 100, currentTheme = 'dark', toastTimer;
+
+  function say(message, target = 'importStatus') { $(target).textContent = message || ''; }
+  function toast(message) {
+    const el = $('toast'); el.textContent = message; el.style.display = 'block';
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.style.display = 'none', 3200);
+  }
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => { const d = req.result; if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' }); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  function requestResult(req) { return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
+  async function allBooks() { return requestResult(db.transaction(STORE, 'readonly').objectStore(STORE).getAll()); }
+  async function getBook(id) { return requestResult(db.transaction(STORE, 'readonly').objectStore(STORE).get(id)); }
+  async function putBook(record) {
+    const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(record);
+    return new Promise((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); });
+  }
+  async function deleteBook(id) {
+    const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).delete(id);
+    return new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
+  }
+  function humanSize(bytes) { if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`; return `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
+  function safeTitle(record) { return record.title || record.name || 'Untitled EPUB'; }
+  function idFor(file) { return `${file.name}::${file.size}::${file.lastModified}`; }
+
+  async function importFiles(files) {
+    if (!files || !files.length) return;
+    say(`Importing ${files.length} EPUB${files.length === 1 ? '' : 's'}…`);
+    let success = 0;
+    for (const file of files) {
+      if (!file.name.toLowerCase().endsWith('.epub') && file.type !== 'application/epub+zip') {
+        say(`Skipped ${file.name}: this is not an EPUB.`); continue;
+      }
+      try {
+        const record = { id: idFor(file), name: file.name, title: file.name.replace(/\.epub$/i, ''), creator: '', size: file.size, addedAt: Date.now(), blob: file, progress: null, fontSize: 100, theme: 'dark' };
+        await putBook(record); success++;
+      } catch (err) { console.error(err); say(`Couldn't save ${file.name}. Browser storage may be full.`); }
+    }
+    $('epubPicker').value = '';
+    await renderLibrary();
+    say(`Added ${success} book${success === 1 ? '' : 's'}. Your files remain in this browser on this device.`);
+  }
+
+  async function renderLibrary() {
+    const list = $('bookList'); const records = (await allBooks()).sort((a,b) => (b.addedAt || 0) - (a.addedAt || 0));
+    $('bookCount').textContent = `${records.length} book${records.length === 1 ? '' : 's'}`;
+    list.replaceChildren();
+    if (!records.length) {
+      const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Your library is empty. Add an EPUB to start reading.'; list.append(empty); return;
+    }
+    for (const record of records) {
+      const card = document.createElement('article'); card.className = 'book-card';
+      const cover = document.createElement('div'); cover.className = 'book-cover'; cover.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v18H7.5A2.5 2.5 0 0 1 5 17.5z"/><path d="M5 5v15M9 6h7M9 10h7"/></svg>';
+      const info = document.createElement('div'); info.className = 'book-info';
+      const title = document.createElement('div'); title.className = 'book-title'; title.textContent = safeTitle(record);
+      const meta = document.createElement('div'); meta.className = 'book-meta'; meta.textContent = `${record.creator ? record.creator + ' · ' : ''}${humanSize(record.size)}${record.progress ? ' · Reading progress saved' : ''}`;
+      info.append(title, meta);
+      const actions = document.createElement('div'); actions.className = 'book-actions';
+      const open = document.createElement('button'); open.className = 'primary'; open.textContent = 'Read'; open.addEventListener('click', () => openBook(record.id));
+      const remove = document.createElement('button'); remove.textContent = 'Remove'; remove.addEventListener('click', async () => { if (confirm(`Remove “${safeTitle(record)}” from this browser's library? The original file in Files will not be deleted.`)) { await deleteBook(record.id); await renderLibrary(); } });
+      actions.append(open, remove); card.append(cover, info, actions); list.append(card);
+    }
+  }
+
+  function flattenToc(items, out = [], depth = 0) {
+    for (const item of (items || [])) {
+      if (item.href) out.push({ label: `${'　'.repeat(Math.min(depth, 4))}${String(item.label || 'Untitled section').trim()}`, href: item.href });
+      if (item.subitems?.length) flattenToc(item.subitems, out, depth + 1);
+    }
+    return out;
+  }
+
+  async function openBook(id) {
+    if (typeof window.ePub !== 'function') { toast('The reader engine did not load. Connect to the internet and reload this page.'); return; }
+    if (rendition) { try { rendition.destroy(); } catch (_) {} rendition = null; }
+    if (book) { try { book.destroy(); } catch (_) {} book = null; }
+    activeRecord = await getBook(id); if (!activeRecord) return;
+    $('libraryScreen').style.display = 'none'; $('readerScreen').style.display = 'block'; $('libraryButton').classList.remove('hidden');
+    $('readerBookTitle').textContent = safeTitle(activeRecord); $('readerStatus').textContent = 'Opening EPUB…'; $('reader').replaceChildren();
+    fontSize = Number(activeRecord.fontSize || 100); currentTheme = activeRecord.theme || 'dark'; updateThemeButton();
+    try {
+      const buffer = await activeRecord.blob.arrayBuffer();
+      book = ePub(buffer);
+      rendition = book.renderTo('reader', { width: '100%', height: '100%', flow: 'scrolled-doc', spread: 'none', allowScriptedContent: false });
+      registerThemes();
+      await book.ready;
+      const metadata = await book.loaded.metadata;
+      activeRecord.title = metadata.title || activeRecord.title; activeRecord.creator = metadata.creator || '';
+      $('readerBookTitle').textContent = safeTitle(activeRecord);
+      const nav = await book.loaded.navigation;
+      const toc = flattenToc(nav.toc || []);
+      populateToc(toc);
+      rendition.themes.select(currentTheme); rendition.themes.fontSize(`${fontSize}%`);
+      rendition.on('relocated', loc => {
+        if (!loc || !loc.start) return;
+        activeRecord.progress = loc.start.cfi;
+        const href = loc.start.href || '';
+        const idx = toc.findIndex(item => href && (href === item.href || href.split('#')[0] === item.href.split('#')[0]));
+        $('progressText').textContent = idx >= 0 && toc.length ? `${idx + 1}/${toc.length}` : 'Reading';
+        const sel = $('tocSelect'); if (idx >= 0 && sel.options.length > idx) sel.selectedIndex = idx;
+        putBook(activeRecord).catch(console.error);
+      });
+      await rendition.display(activeRecord.progress || undefined);
+      $('readerStatus').textContent = '';
+      await putBook(activeRecord);
+    } catch (err) {
+      console.error(err); $('readerStatus').textContent = 'Could not open this EPUB. It may be incomplete or unsupported. Try importing the original EPUB again.';
+    }
+  }
+
+  function populateToc(toc) {
+    const select = $('tocSelect'); select.replaceChildren();
+    if (!toc.length) { select.append(new Option('Contents unavailable', '')); select.disabled = true; return; }
+    select.disabled = false;
+    toc.forEach((item, i) => select.append(new Option(item.label || `Section ${i + 1}`, item.href)));
+    select.onchange = () => { if (rendition && select.value) rendition.display(select.value); };
+  }
+  function registerThemes() {
+    const dark = {
+      'body': { 'background': '#0b0d12 !important', 'color': '#e8ebf2 !important' },
+      'p, div, span, li, blockquote, section, article, h1, h2, h3, h4, h5, h6': { 'color': '#e8ebf2 !important', 'background-color': 'transparent !important' },
+      'a': { 'color': '#a9cfff !important' }
+    };
+    const light = {
+      'body': { 'background': '#fffdf8 !important', 'color': '#20232a !important' },
+      'p, div, span, li, blockquote, section, article, h1, h2, h3, h4, h5, h6': { 'color': '#20232a !important', 'background-color': 'transparent !important' },
+      'a': { 'color': '#215fab !important' }
+    };
+    rendition.themes.register('dark', dark); rendition.themes.register('light', light);
+  }
+  function updateThemeButton() { $('themeToggle').textContent = currentTheme === 'dark' ? 'Light mode' : 'Dark mode'; }
+  async function saveAppearance() { if (activeRecord) { activeRecord.fontSize = fontSize; activeRecord.theme = currentTheme; await putBook(activeRecord); } }
+  function showLibrary() {
+    if (rendition) { try { rendition.destroy(); } catch (_) {} rendition = null; }
+    if (book) { try { book.destroy(); } catch (_) {} book = null; }
+    activeRecord = null; $('readerScreen').style.display = 'none'; $('libraryScreen').style.display = 'block'; $('libraryButton').classList.add('hidden'); renderLibrary();
+  }
+
+  $('epubPicker').addEventListener('change', e => importFiles([...e.target.files]));
+  $('refreshButton').addEventListener('click', renderLibrary);
+  $('libraryButton').addEventListener('click', showLibrary);
+  $('prevButton').addEventListener('click', () => rendition?.prev());
+  $('nextButton').addEventListener('click', () => rendition?.next());
+  $('fontDown').addEventListener('click', async () => { fontSize = Math.max(70, fontSize - 10); rendition?.themes.fontSize(`${fontSize}%`); await saveAppearance(); });
+  $('fontUp').addEventListener('click', async () => { fontSize = Math.min(190, fontSize + 10); rendition?.themes.fontSize(`${fontSize}%`); await saveAppearance(); });
+  $('themeToggle').addEventListener('click', async () => { currentTheme = currentTheme === 'dark' ? 'light' : 'dark'; rendition?.themes.select(currentTheme); updateThemeButton(); await saveAppearance(); });
+
+  (async () => {
+    try { db = await openDb(); await renderLibrary(); }
+    catch (err) { console.error(err); say('Browser storage is unavailable. Try opening this site directly in Safari.'); }
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(err => console.warn('Service worker registration failed:', err));
+  })();
+})();
+</script>
+</body>
+</html>
